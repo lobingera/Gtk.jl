@@ -27,7 +27,35 @@ type GtkCanvas <: GtkDrawingArea # NOT an @GType
         on_signal_motion(mousemove_cb, widget, 0, 0, false, widget.mouse)
         return gobject_ref(widget)
     end
+
+    function GtkCanvas(flag::Bool)
+        if flag
+            da = ccall((:gtk_drawing_area_new,libgtk),Ptr{GObject},())
+            widget = new(da)
+            return gobject_ref(widget)
+        else    
+            da = ccall((:gtk_drawing_area_new,libgtk),Ptr{GObject},())
+            ccall((:gtk_widget_set_size_request,libgtk),Void,(Ptr{GObject},Int32,Int32), da, w, h)
+            widget = new(da, false, false, MouseHandler(), nothing, nothing)
+            widget.mouse.widget = widget
+            signal_connect(notify_realize,widget,"realize",Void,())
+            signal_connect(notify_unrealize,widget,"unrealize",Void,())
+            on_signal_resize(notify_resize, widget)
+            if gtk_version == 3
+                signal_connect(canvas_on_draw_event,widget,"draw",Cint,(Ptr{Void},))
+            else
+                signal_connect(canvas_on_expose_event,widget,"expose-event",Cint,(Ptr{Void},))
+            end
+            on_signal_button_press(mousedown_cb, widget, false, widget.mouse)
+            on_signal_button_release(mouseup_cb, widget, false, widget.mouse)
+            on_signal_motion(mousemove_cb, widget, 0, 0, false, widget.mouse)
+            return gobject_ref(widget)
+        end
+    end
+
 end
+
+
 const GtkCanvasLeaf = GtkCanvas
 macro GtkCanvas(args...)
     :( GtkCanvas($(map(esc,args)...)) )
