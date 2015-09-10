@@ -54,6 +54,48 @@ function setproperty!(w::GtkContainer, name::StringLike, child::GtkWidget, value
     w
 end
 
+# Shortcut for creating callbacks that don't corrupt Gtk state if
+# there's an error
+macro guarded(ex...)
+    retval = nothing
+    if length(ex) == 2
+        retval = ex[1]
+        ex = ex[2]
+    else
+        length(ex) == 1 || error("@guarded requires 1 or 2 arguments")
+        ex = ex[1]
+    end
+    # do-block syntax
+    if ex.head == :call && length(ex.args) >= 2 && ex.args[2].head == :->
+        newbody = _guarded(ex.args[2], retval)
+        ret = deepcopy(ex)
+        ret.args[2] = Expr(ret.args[2].head, ret.args[2].args[1], newbody)
+        return esc(ret)
+    end
+    newbody = _guarded(ex, retval)
+    esc(Expr(ex.head, ex.args[1], newbody))
+end
+
+function _guarded(ex, retval)
+    isa(ex, Expr) && (
+        ex.head == :-> ||
+        (ex.head == :(=) && isa(ex.args[1],Expr) && ex.args[1].head == :call) ||
+        ex.head == :function
+    ) || error("@guarded requires an expression defining a function")
+    quote
+        begin
+            try
+                $(ex.args[2])
+            catch err
+                warn("Error in @guarded callback")
+                Base.display_error(err, catch_backtrace())
+                $retval
+            end
+        end
+    end
+end
+
+
 @deprecate getindex(w::GtkContainer, child::GtkWidget, name::StringLike, T::Type) getproperty(w,name,child,T)
 @deprecate setindex!(w::GtkContainer, value, child::GtkWidget, name::StringLike, T::Type) setproperty!(w,name,child,T,value)
 @deprecate setindex!(w::GtkContainer, value, child::GtkWidget, name::StringLike) setproperty!(w,name,child,value)
